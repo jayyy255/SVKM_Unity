@@ -1,0 +1,201 @@
+<html><body><h1>SVKM Unity – Event Management System Project Report</h1>
+<h2>1. Title</h2>
+<p><strong>SVKM Unity – Comprehensive Event, Resource, and Institutional Governance Portal</strong></p>
+<h2>2. Existing System and Problem</h2>
+<p>Currently, the event management ecosystem within the university is highly fragmented. Workflows rely heavily on long email chains, physical files for approvals, and disparate Google Forms for student registrations. 
+This disconnected system leads to multiple problems:</p>
+<ul>
+<li><strong>Venue Conflicts:</strong> Two committees often double-book the same venue due to a lack of a centralized tracking calendar.</li>
+<li><strong>Lost Paperwork:</strong> Physical permission files get delayed or lost moving between Faculty, HODs, and Principals.</li>
+<li><strong>Registration Chaos:</strong> Managing team-based events via Google Forms requires manual matching of members, leading to missing data and incomplete teams.</li>
+<li><strong>Proxy Attendance:</strong> Students often mark proxies for attendance, and compiling a final &quot;Attendance Concession&quot; (On-Duty) list is a tedious manual task.</li>
+</ul>
+<h2>3. Need for the Proposed System</h2>
+<p>To solve these inefficiencies, the university needs a <strong>Centralized Software-as-a-Service (SaaS) Platform</strong> that digitizes the entire lifecycle of a university event. A unified portal ensures transparency, enforces hard rules (like preventing double-bookings programmatically), eliminates paper waste, and provides a seamless, modern experience for the student body.</p>
+<h2>4. Objectives of the Project</h2>
+<ul>
+<li><strong>Eliminate Venue Conflicts:</strong> Implement a smart booking engine with soft-locks to guarantee zero double-bookings.</li>
+<li><strong>Paperless Approvals:</strong> Create a digital state-machine workflow for faculty and principal approvals.</li>
+<li><strong>Streamlined Registration:</strong> Provide a &quot;Devfolio-style&quot; team registration system ensuring teams meet minimum size requirements before submission.</li>
+<li><strong>Robust Attendance:</strong> Replace physical sign-in sheets with a secure, rate-limited digital punch-in system, culminating in a one-click CSV export for official OD concessions.</li>
+</ul>
+<h2>5. Scope of the Project</h2>
+<p>The current scope encompasses four primary user roles:</p>
+<ol>
+<li><strong>Students:</strong> Can discover events, register (solo or as a team), submit custom individual forms, and mark their attendance.</li>
+<li><strong>Committee Admins:</strong> Can book venues, create events, define shortlisting logic, and manage attendance sessions.</li>
+<li><strong>Faculty Mentors:</strong> Can review and approve/reject provisional venue bookings initiated by their committees.</li>
+<li><strong>Principals/College Admins:</strong> Have the final authority to approve venue bookings to lock them officially.</li>
+</ol>
+<h2>6. Functional &amp; Non-Functional Requirements</h2>
+<h3>Functional Requirements</h3>
+<ul>
+<li><strong>Smart Booking:</strong> The system shall soft-lock a venue upon request and prevent concurrent bookings.</li>
+<li><strong>Hierarchical Approval:</strong> Bookings must transition through <code>provisional -&gt; pending_faculty -&gt; pending_principal -&gt; approved</code>.</li>
+<li><strong>Team Registration:</strong> The system shall validate unique team names, enforce <code>minTeamSize</code> and <code>maxTeamSize</code>, and collect custom form answers per member.</li>
+<li><strong>Attendance System:</strong> The system shall generate a secure session code, accept student punch-ins, allow admin bulk-approval, and export a final CSV.</li>
+</ul>
+<h3>Non-Functional Requirements</h3>
+<ul>
+<li><strong>Security:</strong> Passwords hashed with Bcrypt, API routes secured with JWT, and role-based access control (RBAC).</li>
+<li><strong>Reliability:</strong> The system uses MongoDB transactions to prevent race conditions during venue booking and team joining.</li>
+<li><strong>Usability:</strong> A responsive, modern UI built with React and Tailwind CSS.</li>
+<li><strong>Performance:</strong> IP-based rate limiting on the attendance endpoint to prevent spam.</li>
+</ul>
+<h2>7. System Design</h2>
+<h3>Class Diagram / Data Model</h3>
+<pre><code class="language-mermaid">classDiagram
+    class User {
+        +String name
+        +String email
+        +String role
+        +String college
+        +String department
+        +String committeeName
+    }
+    class Venue {
+        +String name
+        +Number capacity
+        +String college
+    }
+    class Event {
+        +String title
+        +Date startTime
+        +Date endTime
+        +Boolean isGroupEvent
+        +Number minTeamSize
+        +Number maxTeamSize
+        +Array customFormSchema
+    }
+    class Booking {
+        +String status
+        +String approvalState
+        +Date startTime
+        +Date endTime
+    }
+    class Registration {
+        +Boolean isTeam
+        +String teamName
+        +String inviteCode
+        +Boolean isSubmitted
+        +String status
+    }
+    class AttendanceRequest {
+        +String status
+        +String ipAddress
+    }
+    
+    User &quot;1&quot; -- &quot;*&quot; Booking : Requests / Approves
+    Venue &quot;1&quot; -- &quot;*&quot; Booking : Has
+    Event &quot;1&quot; -- &quot;1&quot; Venue : Held At
+    User &quot;1&quot; -- &quot;*&quot; Registration : Submits
+    Event &quot;1&quot; -- &quot;*&quot; Registration : Contains
+    Event &quot;1&quot; -- &quot;*&quot; AttendanceRequest : Has
+</code></pre>
+<h3>Use Case Diagram</h3>
+<pre><code class="language-mermaid">flowchart LR
+    Student((Student))
+    CommAdmin((Committee Admin))
+    Approver((Faculty / Principal))
+
+    subgraph SVKM Unity Portal
+        Register[Register for Event]
+        JoinTeam[Create / Join Team]
+        MarkAtt[Mark Attendance]
+        
+        BookVenue[Book Venue]
+        CreateEvent[Create Event]
+        Shortlist[Shortlist Registrations]
+        ExportAtt[Export Concession CSV]
+        
+        Approve[Approve / Reject Bookings]
+    end
+
+    Student --&gt; Register
+    Student --&gt; JoinTeam
+    Student --&gt; MarkAtt
+
+    CommAdmin --&gt; BookVenue
+    CommAdmin --&gt; CreateEvent
+    CommAdmin --&gt; Shortlist
+    CommAdmin --&gt; ExportAtt
+
+    Approver --&gt; Approve
+</code></pre>
+<h2>8. Architecture</h2>
+<p>The system follows a standard modern <strong>MERN Stack</strong> Client-Server Architecture.</p>
+<pre><code class="language-mermaid">graph TD
+    Client[React Frontend - Vite + Tailwind]
+    Auth[JWT Authentication]
+    API[Node.js / Express Backend]
+    DB[(MongoDB Atlas)]
+
+    Client &lt;--&gt;|REST API JSON| Auth
+    Auth &lt;--&gt; API
+    API &lt;--&gt;|Mongoose ODM| DB
+</code></pre>
+<h2>9. Screenshots of Working System</h2>
+<p><em>(Note: Please insert real screenshots here prior to final submission)</em></p>
+<ol>
+<li><strong>Login Page:</strong> showing role-based entry.</li>
+<li><strong>Committee Admin Dashboard:</strong> Showing the Venue Booking and Event Creation forms.</li>
+<li><strong>Approver Dashboard:</strong> Showing a pending venue request waiting for Faculty approval.</li>
+<li><strong>Student Dashboard:</strong> Showing the Devfolio-style Team interface (Members list, Incomplete status).</li>
+<li><strong>Admin Shortlisting Sheet:</strong> Showing the dynamic data table with individual form answers.</li>
+<li><strong>Attendance Export:</strong> Showing the bulk-approval interface.</li>
+</ol>
+<h2>10. Test Cases Report</h2>
+<table>
+<thead>
+<tr>
+<th>Test Case ID</th>
+<th>Description</th>
+<th>Expected Result</th>
+<th>Actual Result</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TC_01</td>
+<td>Attempt to book an already locked venue for the same time.</td>
+<td>System throws 409 Conflict Error.</td>
+<td>Throws 409 Error.</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td>TC_02</td>
+<td>Student attempts to submit a team with 1 member when min is 2.</td>
+<td>Submit button is disabled/Backend rejects.</td>
+<td>Button disabled &amp; backend rejects.</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td>TC_03</td>
+<td>Student attempts to join a team using an invalid code.</td>
+<td>System throws 404/400 Invalid Code.</td>
+<td>Throws Invalid Code.</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td>TC_04</td>
+<td>Faculty Mentor approves a booking.</td>
+<td>State changes to <code>pending_home_principal</code>.</td>
+<td>State updates correctly.</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td>TC_05</td>
+<td>Admin generates Attendance session, Student enters incorrect code.</td>
+<td>System rejects attendance request.</td>
+<td>Rejects with &quot;Invalid Code&quot;.</td>
+<td>PASS</td>
+</tr>
+<tr>
+<td>TC_06</td>
+<td>Admin exports attendance CSV for an event.</td>
+<td>CSV downloads containing only <code>approved</code> students.</td>
+<td>CSV generated successfully.</td>
+<td>PASS</td>
+</tr>
+</tbody></table>
+</body></html>

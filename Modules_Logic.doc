@@ -1,0 +1,100 @@
+<html><body><h1>SVKM Unity – Modules &amp; Logic Explanation</h1>
+<p>This document explains the underlying logic, data flow, and architecture of the three primary modules implemented in the SVKM Unity Event Management System.</p>
+<hr>
+<h2>Module 1: Smart Venue Booking &amp; Digital Approval Workflow</h2>
+<h3>Objective</h3>
+<p>To provide a centralized calendar for venue booking that programmatically prevents double-bookings and enforces a strict, paperless hierarchical approval chain.</p>
+<h3>How it Works (Logic &amp; Data Flow)</h3>
+<ol>
+<li><p><strong>Venue Selection (Soft-Lock):</strong></p>
+<ul>
+<li>When a Committee Admin requests a venue, the system checks the <code>Booking</code> collection to ensure no existing booking overlaps with the requested <code>startTime</code> and <code>endTime</code>.</li>
+<li>If the slot is free, the system creates a new <code>Booking</code> document with <code>status = &#39;provisional&#39;</code> and <code>approvalState = &#39;pending_faculty&#39;</code>.</li>
+<li>This creates a <strong>&quot;Soft-Lock&quot;</strong>. Other committees checking the calendar will see this slot as blocked, preventing race conditions.</li>
+</ul>
+</li>
+<li><p><strong>The State Machine (Hierarchical Approval):</strong></p>
+<ul>
+<li>The booking enters a state machine managed via API endpoints (<code>/approve</code> and <code>/reject</code>).</li>
+<li>The system checks the <code>role</code> and <code>college</code> of the user calling the endpoint against the <code>adminId</code> (the requester) and the <code>venueId</code> (the resource).</li>
+<li><strong>Step A (Faculty):</strong> The Faculty Mentor of the requesting committee reviews the request. If approved, the state shifts to <code>pending_home_principal</code>.</li>
+<li><strong>Step B (Principal):</strong> The Principal of the college reviews it. If approved, the state shifts to <code>approved</code> (and the status becomes officially locked).</li>
+<li><em>Cross-College Logic:</em> If the requested venue belongs to a <em>different</em> college (e.g., MPSTME requesting an NMIMS venue), the state machine expands to require the Host College&#39;s Admin and Principal to approve it as well.</li>
+</ul>
+</li>
+<li><p><strong>Rejection:</strong></p>
+<ul>
+<li>If any approver rejects the booking, the state immediately shifts to <code>rejected</code>, and the Soft-Lock is released, making the venue available for others again.</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2>Module 2: Devfolio-Style Team Registration &amp; Shortlisting</h2>
+<h3>Objective</h3>
+<p>To handle complex, multi-member registrations where individuals must provide custom data, and to ensure admins only review complete, valid teams.</p>
+<h3>How it Works (Logic &amp; Data Flow)</h3>
+<ol>
+<li><p><strong>Event Configuration:</strong></p>
+<ul>
+<li>When creating an event, the Admin defines <code>isGroupEvent</code>, <code>minTeamSize</code>, <code>maxTeamSize</code>, and a <code>customFormSchema</code> (e.g., [&quot;GitHub Link&quot;, &quot;Resume Link&quot;]).</li>
+</ul>
+</li>
+<li><p><strong>Team Creation &amp; Invite Codes:</strong></p>
+<ul>
+<li>A student clicks &quot;Create Team&quot;. The backend generates a unique 6-character alphanumeric <code>inviteCode</code> and creates a <code>Registration</code> document.</li>
+<li>The student must fill out the custom form questions. This data is pushed into the <code>formData</code> array inside the Registration document, linked explicitly to their <code>userId</code>.</li>
+</ul>
+</li>
+<li><p><strong>Joining Teams:</strong></p>
+<ul>
+<li>Other students click &quot;Join Team&quot; and input the invite code.</li>
+<li>The backend verifies the code, ensures the team hasn&#39;t exceeded <code>maxTeamSize</code>, and pushes the new student into the <code>members</code> array. The new student <em>also</em> submits their custom form answers, which are appended to the <code>formData</code> array.</li>
+</ul>
+</li>
+<li><p><strong>Submission Gatekeeping:</strong></p>
+<ul>
+<li>Teams start with <code>isSubmitted = false</code>.</li>
+<li>The frontend continuously checks if <code>members.length &gt;= minTeamSize</code>.</li>
+<li>Only when the minimum size is met, the &quot;Submit Application&quot; button unlocks. Clicking it sets <code>isSubmitted = true</code>, locking the team from further changes.</li>
+</ul>
+</li>
+<li><p><strong>Admin Shortlisting:</strong></p>
+<ul>
+<li>The Admin Dashboard queries the database for registrations where <code>eventId</code> matches and <code>isSubmitted == true</code>.</li>
+<li>The UI loops through the <code>members</code> array and the <code>formData</code> array to render each specific student&#39;s answers side-by-side in a table, allowing the admin to easily review and check the &quot;Shortlist&quot; box.</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h2>Module 3: Attendance Request &amp; Concession Export System</h2>
+<h3>Objective</h3>
+<p>To verify physical presence at an event securely and generate an official Attendance Concession (On-Duty / OD Leave) list for college HODs.</p>
+<h3>How it Works (Logic &amp; Data Flow)</h3>
+<ol>
+<li><p><strong>Session Generation:</strong></p>
+<ul>
+<li>The Admin generates an <code>AttendanceSession</code> for a specific event. The backend creates a secure, random 6-character code and stores it alongside the event&#39;s valid time window.</li>
+</ul>
+</li>
+<li><p><strong>Secure Punch-In:</strong></p>
+<ul>
+<li>During the event, the Admin verbally announces the code.</li>
+<li>A student punches the code into their dashboard.</li>
+<li><strong>Security Checks:</strong><ul>
+<li>The backend verifies the code is correct and the current time is within the session window.</li>
+<li><strong>Eligibility:</strong> It checks the <code>Registration</code> collection to ensure this specific student was actually <code>shortlisted</code> or <code>approved</code> for the event. (Random students cannot get attendance).</li>
+<li><strong>Spam/Proxy Prevention:</strong> It checks the <code>AttendanceRequest</code> collection against the student&#39;s <code>req.ip</code>. If a request was made from the same IP within the last 1 minute, it blocks it, preventing a student from proxy-punching for their friends.</li>
+</ul>
+</li>
+<li>If all checks pass, an <code>AttendanceRequest</code> is created with <code>status = &#39;pending&#39;</code>.</li>
+</ul>
+</li>
+<li><p><strong>Bulk Approval &amp; Export:</strong></p>
+<ul>
+<li>The Admin navigates to the Attendance Review tab, which fetches all <code>AttendanceRequest</code> documents for the event.</li>
+<li>The Admin can select all valid punches and click &quot;Bulk Approve&quot;, shifting their status to <code>approved</code>.</li>
+<li>Finally, clicking &quot;Download CSV&quot; triggers a backend parser (<code>json2csv</code>) that compiles the final list of verified students, their departments, and the exact event timestamps, returning it as a downloadable file to be sent to the HODs.</li>
+</ul>
+</li>
+</ol>
+</body></html>
