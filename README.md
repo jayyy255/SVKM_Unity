@@ -19,7 +19,7 @@ SVKM Unity is a centralized event, resource, and institutional governance platfo
 Create a `.env` file in the `backend` directory with the following:
 ```
 PORT=5000
-MONGO_URI=mongodb+srv://admin:miniproj123@cluster0.tye7va6.mongodb.net/?appName=Cluster0
+MONGO_URI=<your-mongodb-atlas-uri>
 JWT_SECRET=supersecret123
 ```
 

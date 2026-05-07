@@ -6,7 +6,7 @@ const User = require('./models/User');
 const Venue = require('./models/Venue');
 const Event = require('./models/Event');
 
-mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://admin:miniproj123@cluster0.tye7va6.mongodb.net/?appName=Cluster0')
+mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('MongoDB connected for seeding'))
   .catch(err => console.log(err));
 
